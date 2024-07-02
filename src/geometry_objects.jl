@@ -80,9 +80,9 @@ function get_geom_fromfile(path::String)::M3Geometry
 end
 
 function get_geom_fromDEM(m3path::String,slopedatapath::String,aspecdatapath::String)
-    m3 = Raster(m3path)
-    slop = Raster(slopedatapath)
-    aspe = Raster(aspecdatapath)
+    m3 = AG.readraster(m3path)
+    slop = AG.readraster(slopedatapath)
+    aspe = AG.readraster(aspecdatapath)
 
     return M3Geometry(
         solaz = m3[:,:,1],

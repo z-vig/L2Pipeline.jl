@@ -26,7 +26,7 @@ function get_temp(B,ϵ,λ,F) :: Float64
     return (h*c/(λ*kᵦ)) * (log((2*h*c^2*ϵ/(F*B*λ^5))-1))^-1
 end
 
-function clark_etal(dat::L1CalData)
+function clark_etal(dat::L1CalData,geom::M3Geometry)
     #Undoing Solar Distance Correction (Step1)
     dat.current_step = dat.current_step .* dat.solspec[3]^2
 
@@ -88,23 +88,9 @@ function clark_etal(dat::L1CalData)
     end
     
     #Phase Angle Correction (Step6)
-    i_topo = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        saz = dat.obs[x,y,1]*(π/180)
-        sze = dat.obs[x,y,2]*(π/180)
-        slo = dat.obs[x,y,8]*(π/180)
-        asp = dat.obs[x,y,9]*(π/180)
-        return (180/π)*acos(cos(sze)*cos(slo)+sin(sze)*sin(slo)*cos((saz-asp)))
-    end
-
-    e_topo = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        maz = dat.obs[x,y,3]*(π/180)
-        mze = dat.obs[x,y,4]*(π/180)
-        slo = dat.obs[x,y,8]*(π/180)
-        asp = dat.obs[x,y,9]*(π/180)
-        return (180/π)*acos(cos(mze)*cos(slo)+sin(mze)*sin(slo)*cos((maz-asp)))
-    end
+    convert_to_rad!(geom)
+    i_topo = calc_i(geom)
+    e_topo = calc_e(geom)
     
     function XL(i,e)
         return cos(i*(π/180))/(cos(e*(π/180))+cos(i*(π/180)))
