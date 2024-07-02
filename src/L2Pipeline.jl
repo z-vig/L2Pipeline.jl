@@ -122,6 +122,9 @@ function caldata_from_url(url::String)
 
 end
 
+include("geometry_objects.jl")
+export M3Geometry,convert_to_rad!,calc_e,calc_i,get_geom_fromfile,get_geom_fromDEM
+
 include("spectral_utilities.jl")
 export movingavg
 
