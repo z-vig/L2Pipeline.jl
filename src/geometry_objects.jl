@@ -53,6 +53,13 @@ function calc_e(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
     return (180/π) .* acos.(cos.(geo.m3ze) .* cos.(geo.slope) .+ sin.(geo.m3ze) .* sin.(geo.slope) .* cos.((geo.m3az .- geo.aspec)))
 end
 
+function modify_to_DEM(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
+    i = calc_i(geo)
+    e = calc_e(geo)
+    geo.phase = i.+e
+    geo.cosi = cos.((π/180).*i)
+end
+
 function get_geom_fromfile(path::String)::M3Geometry
     obs = h5open(abspath(path)) do f
         f["Backplanes/ObsGeometry"][:,:,:]
@@ -73,13 +80,24 @@ function get_geom_fromfile(path::String)::M3Geometry
 end
 
 function get_geom_fromDEM(m3path::String,slopedatapath::String,aspecdatapath::String)
-    A = Raster(m3path,lazy=true)
+    m3 = Raster(m3path)
+    slop = Raster(slopedatapath)
+    aspe = Raster(aspecdatapath)
 
-    println(A[:,:,1].!=0)
-
-    return nothing
+    return M3Geometry(
+        solaz = m3[:,:,1],
+        solze = m3[:,:,2],
+        m3az = m3[:,:,3],
+        m3ze = m3[:,:,4],
+        phase = m3[:,:,5],
+        solen = m3[:,:,6],
+        m3len = m3[:,:,7],
+        slope = slop[:,:],
+        aspec = aspe[:,:],
+        cosi = m3[:,:,10]
+    )
 
 end
 
-get_geom_fromDEM("C:/Lunar_Imagery_Data/M3_data/obsgeom/obsgeom_coreg.tif","C:/Lunar_Imagery_Data/LOLA_Slope/LOLA_SLOPE_qgis.tif","C:/Lunar_Imagery_Data/LOLA_Slope/LOLA_2M_ASPECT.tif")
+get_geom_fromDEM("C:/Lunar_Imagery_Data/M3_data/obsgeom/obsgeom_wall.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_slope.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_aspect.tif")
 GC.gc()
