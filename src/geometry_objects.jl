@@ -38,7 +38,7 @@ function convert_to_rad!(geo :: M3Geometry)
 
     for i = eachindex(fields)
         val = getfield(geo,fields[i])
-        val = val * (π/180)
+        val .*= (π/180)
         setfield!(geo,fields[i],val)
     end
 
@@ -46,11 +46,13 @@ function convert_to_rad!(geo :: M3Geometry)
 end
 
 function calc_i(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
-    return (180/π) .* acos.(cos.(geo.solze) .* cos.(geo.slope) .+ sin.(geo.solze)  .* sin.(geo.slope) .* cos.((geo.solaz .- geo.aspec)))    
+    arg = Float32.(cos.(geo.solze) .* cos.(geo.slope) .+ sin.(geo.solze)  .* sin.(geo.slope) .* cos.((geo.solaz .- geo.aspec)))
+    return (180/π) .* acos.(arg)
 end
 
 function calc_e(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
-    return (180/π) .* acos.(cos.(geo.m3ze) .* cos.(geo.slope) .+ sin.(geo.m3ze) .* sin.(geo.slope) .* cos.((geo.m3az .- geo.aspec)))
+    arg = Float32.(cos.(geo.m3ze) .* cos.(geo.slope) .+ sin.(geo.m3ze) .* sin.(geo.slope) .* cos.((geo.m3az .- geo.aspec)))
+    return (180/π) .* acos.(arg)
 end
 
 function modify_to_DEM(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
@@ -80,10 +82,18 @@ function get_geom_fromfile(path::String)::M3Geometry
 end
 
 function get_geom_fromDEM(m3path::String,slopedatapath::String,aspecdatapath::String)
-    m3 = AG.readraster(m3path)
-    slop = AG.readraster(slopedatapath)
-    aspe = AG.readraster(aspecdatapath)
+    m3 = AG.readraster(m3path)[:,:,:]
+    slop = AG.readraster(slopedatapath)[:,:]
+    aspe = AG.readraster(aspecdatapath)[:,:]
 
+    for i = eachindex(m3[1,1,:])
+        m3[slop[:,:,1].==-9999,i] .= NaN
+    end
+    
+    slop[slop.==-9999] .= NaN
+    aspe[aspe.==-9999] .= NaN
+
+    # return nothing
     return M3Geometry(
         solaz = m3[:,:,1],
         solze = m3[:,:,2],
@@ -99,5 +109,5 @@ function get_geom_fromDEM(m3path::String,slopedatapath::String,aspecdatapath::St
 
 end
 
-get_geom_fromDEM("C:/Lunar_Imagery_Data/M3_data/obsgeom/obsgeom_wall.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_slope.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_aspect.tif")
+# get_geom_fromDEM("C:/Lunar_Imagery_Data/M3_data/obsgeom/obsgeom_wall.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_slope.tif","C:/Lunar_Imagery_Data/LOLA_Slope/wall_aspect.tif")
 GC.gc()

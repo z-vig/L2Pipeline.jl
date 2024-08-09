@@ -88,27 +88,7 @@ function clark_etal(dat::L1CalData,geom::M3Geometry)
     end
     
     #Phase Angle Correction (Step6)
-    convert_to_rad!(geom)
-    i_topo = calc_i(geom)
-    e_topo = calc_e(geom)
-    
-    function XL(i,e)
-        return cos(i*(π/180))/(cos(e*(π/180))+cos(i*(π/180)))
-    end
-
-    photo_correction = @showprogress map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        i = i_topo[x,y]
-        e = e_topo[x,y]
-        if round(Int,i+e) > 100#size(dat.falpha,1)
-            α = 100#size(dat.falpha,1)
-        else
-            α = round(Int,i+e)
-        end
-        xl = XL(30,0)/XL(i,e)
-        fα = dat.falpha[30,:]./dat.falpha[α,:]
-        return xl.*fα
-    end
+    photometric_correction(dat,geom)
 
     IOF1c = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
