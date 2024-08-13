@@ -55,10 +55,16 @@ function calc_e(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
     return (180/π) .* acos.(arg)
 end
 
+function calc_g(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
+    arg = Float32.(cos.(geo.m3ze) .* cos.(geo.solze) .+ sin.(geo.m3ze) .* sin.(geo.solze) .* cos.((geo.solaz .- geo.m3az)))
+    return (180/π) .* acos.(arg)
+end
+
 function modify_to_DEM(geo :: M3Geometry) :: Matrix{<:AbstractFloat}
     i = calc_i(geo)
     e = calc_e(geo)
-    geo.phase = i.+e
+    g = calc_g(geo)
+    geo.phase = g
     geo.cosi = cos.((π/180).*i)
 end
 

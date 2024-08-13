@@ -23,15 +23,18 @@ function B(λ::Vector{Float64},T::Float64,ϵ::Float64)
 end
 
 function get_temp(B,ϵ,λ,F) :: Float64
+    # println("$B, $ϵ, $λ, $F")
     return (h*c/(λ*kᵦ)) * (log((2*h*c^2*ϵ/(F*B*λ^5))-1))^-1
 end
 
-function clark_etal(dat::L1CalData,geom::M3Geometry)
+function clark_etal!(dat::L1CalData)
     #Undoing Solar Distance Correction (Step1)
-    dat.current_step = dat.current_step .* dat.solspec[3]^2
-
+    step1 = dat.current_step .* dat.solspec[3]^2
+    println("Step 1: Solar distance correction removed...")
+    
     #Optional smoothing Step (Step1.5)
-    dat.current_step,avg_λ = movingavg(dat.current_step,dat.wvl,9)
+    step1,avg_λ = movingavg(step1,dat.wvl,9)
+    println("Step 1.5: Spectra smoothed...")
 
     #Linearly projecting I/F value (Step2)
     wvlA = 1550; idxA = argmin(abs.(dat.wvl.-wvlA))
@@ -40,125 +43,147 @@ function clark_etal(dat::L1CalData,geom::M3Geometry)
     wvlD = 2280; idxD = argmin(abs.(dat.wvl.-wvlD))
     wvlE = 2590; idxE = argmin(abs.(dat.wvl.-wvlE))
 
-    ax = axes(dat.current_step)
+    ax = axes(step1)
     projIF = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
-        m = (dat.current_step[x,y,idxB]-dat.current_step[x,y,idxA]) / (wvlB-wvlA)
-        projIF = m*(wvlC-wvlA)+dat.current_step[x,y,idxA]
-        return projIF
+        m = (step1[x,y,idxB]-step1[x,y,idxA]) / (wvlB-wvlA)
+        projIF = m*(wvlC-wvlA)+step1[x,y,idxA]
+        return projIF #Returns the projected value at wvlC,\. Scalar array
     end
+    println("Step 2: Spectra projected to 2.7μm")
 
-    #Determining initial thermal component (Step3)
+    #Determining initial thermal component and emissivity (Step3)
     T1 = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
-        T1 = dat.current_step[x,y,idxC] - projIF[x,y]
+        T1 = step1[x,y,idxC] - projIF[x,y]
         if T1>0
             return T1
         elseif T1<0
-            return -999 #Error value when temperature is undetermined
+            return NaN #Error value when temperature is undetermined
+        elseif isnan(T1)
+            return NaN
+        end
+    end
+    println("Step 3: First thermal component obtained...")
+
+    
+    ϵ = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(step1[x,y,idxA])
+            return 1 - step1[x,y,idxA]
+        elseif isnan(step1[x,y,idxA])
+            return NaN
         end
     end
 
-    #Determining initial emissivity and temperature (Step4 + extra)
-    ϵ = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        return 1 - dat.current_step[x,y,idxA]
-    end
-
+    #Determining initial temperature and planck spectrum (Step4 + extra)
     temp_derived = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
-        if T1[x,y] != -999
+        if isfinite(T1[x,y])
             Fidx = argmin(abs.(dat.solspec[1].-wvlC))
             F = 10^6 .* dat.solspec[2][Fidx] ./ π
             return get_temp(T1[x,y],ϵ[x,y],wvlC*10^-9,F)
-        else
-            return -999.
+        elseif isnan(T1[x,y])
+            return NaN
         end
     end
+
+    planck1 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(temp_derived[x,y])
+            return B(dat.wvl .* 10^-9, temp_derived[x,y], ϵ[x,y])./(10^6*dat.solspec[2])
+        elseif isnan(temp_derived[x,y])
+            return NaN .* ones(size(dat.wvl))
+        end
+    end
+    println("Step 4: initial emissivity determined and temperature derived...")
 
     #Removing initial thermal emission (Step5)
     IOF1 = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
-        if temp_derived[x,y] != -999.
-            emiss1 = B(dat.wvl.*10^-9,temp_derived[x,y],ϵ[x,y])
-            return dat.current_step[x,y,:] .- (emiss1./(10^6*dat.solspec[2]))
-        else
-            return dat.current_step[x,y,:]
+        if isfinite(temp_derived[x,y])
+            emiss1 = B(dat.wvl .*10^-9,temp_derived[x,y],ϵ[x,y])
+            return step1[x,y,:] .- (emiss1./(10^6*dat.solspec[2]))
+        elseif isnan(temp_derived[x,y])
+            return step1
         end
     end
+    println("Step 5: Initial thermal emission removed...")
     
     #Phase Angle Correction (Step6)
-    photometric_correction(dat,geom)
+    photo_correction = photometric_correction(
+        IOF1,
+        dat.illum...,
+        dat.falpha,
+        return_corrected_values=true
+    )
 
-    IOF1c = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        return IOF1[x,y] .* photo_correction[x,y]
-    end
+    # println("Step 6: Photometric correction applied...")
 
-    IOF_notherm = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        return dat.current_step[x,y,:] .* photo_correction[x,y]
-    end
+    # #Wavelength-dependent emissivity (Step7)
+    # ϵ_λ = map(CartesianIndices(ax[1:2])) do i
+    #     x,y=Tuple(i)
+    #     return 1 .- IOF1c[x,y]
+    # end
+    # println("Step 7: Wavelength-dependent emissivity derived...")
 
-    #Wavelength-dependent emissivity (Step7)
-    ϵ_λ = map(CartesianIndices(ax[1:2])) do i
-        x,y=Tuple(i)
-        return 1 .- IOF1c[x,y]
-    end
+    # #Second projection (Step8)
+    # projIF2 = map(CartesianIndices(ax[1:2])) do i
+    #     x,y = Tuple(i)
+    #     m = (IOF1[x,y][idxE]-IOF1[x,y][idxD]) / (wvlE-wvlD)
+    #     projIF2 = m*(wvlC-wvlD)+IOF1[x,y][idxD]
+    #     return projIF2
+    # end
 
-    #Second projection (Step8)
-    projIF2 = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        m = (IOF1[x,y][idxE]-IOF1[x,y][idxD]) / (wvlE-wvlD)
-        projIF2 = m*(wvlC-wvlD)+IOF1[x,y][idxD]
-        return projIF2
-    end
+    # T2 = map(CartesianIndices(ax[1:2])) do i
+    #     x,y = Tuple(i)
+    #     T2 = dat.current_step[x,y,idxC] - projIF2[x,y]
+    #     if T2>0
+    #         return T2
+    #     elseif T2<0
+    #         return -999 #Error value when temperature is undetermined
+    #     end
+    # end
+    # println("Step 8: Projecting to 2.59μm and obtaining residual thermal component...")
 
-    T2 = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        T2 = dat.current_step[x,y,idxC] - projIF2[x,y]
-        if T2>0
-            return T2
-        elseif T2<0
-            return -999 #Error value when temperature is undetermined
-        end
-    end
+    # #Second blackbody estimation (step9)
+    # temp_derived2 = map(CartesianIndices(ax[1:2])) do i
+    #     x,y = Tuple(i)
+    #     if T2[x,y] != -999
+    #         Fidx = argmin(abs.(dat.solspec[1].-wvlC))
+    #         F = 10^6 .* dat.solspec[2][Fidx] ./ π
+    #         try
+    #             return get_temp(T2[x,y],ϵ_λ[x,y][idxC],wvlC*10^-9,F)
+    #         catch
+    #             println(ϵ_λ[x,y][idxC])
+    #         end
+    #     else
+    #         return -999.
+    #     end
+    # end
 
-    #Second blackbody estimation
-    temp_derived2 = map(CartesianIndices(ax[1:2])) do i
-        x,y = Tuple(i)
-        if T2[x,y] != -999
-            Fidx = argmin(abs.(dat.solspec[1].-wvlC))
-            F = 10^6 .* dat.solspec[2][Fidx] ./ π
-            try
-                return get_temp(T2[x,y],ϵ_λ[x,y][idxC],wvlC*10^-9,F)
-            catch
-                println(ϵ_λ[x,y][idxC])
-            end
-        else
-            return -999.
-        end
-    end
-
-    pnts(x,y) = [(dat.wvl[idxD],IOF1[x,y][idxD]),(dat.wvl[idxE],IOF1[x,y][idxE]),(dat.wvl[idxC],projIF2[x,y])]
-
-    ret_dict = Dict(
-        "temp" => temp_derived,
-        "T1" => T1,
-        "ep" => ϵ,
-        "IOF1" => make3d(IOF1),
-        "i_topo" => i_topo,
-        "e_topo" => e_topo,
-        "photo" => make3d(photo_correction),
-        "IOF1c" => make3d(IOF1c),
-        "IOF_notherm" => make3d(IOF_notherm),
-        "ep_wvl" => make3d(ϵ_λ),
-        "p2" => pnts,
-        "T2" => T2
+    debug_dict = Dict(
+        "wvl_used" => (wvlA,wvlB,wvlC,wvlD,wvlE),
+        "smooth_wvl" => avg_λ,
+        "idx_used" => (idxA,idxB,idxC,idxD,idxE),
+        "step1" => step1, #smoothed, if active
+        "step2" => projIF, #scalar array of projected values
+        "step3" => (T1,ϵ), #(Thermal component, derived emissivity)
+        "step4" => (temp_derived,planck1), #Derived temperature and corresponding planck spectrum
+        "step5" => IOF1, #Thermal spectrum removed
+        # "step6" => photo_correction #Photometrically corrected data
+        # "IOF1" => make3d(IOF1),
+        # "i_topo" => i_topo,
+        # "e_topo" => e_topo,
+        # "photo" => make3d(photo_correction),
+        # "IOF1c" => make3d(IOF1c),
+        # "ep_wvl" => make3d(ϵ_λ),
+        # "p2" => pnts,
+        # "T2" => T2
         # "temp2" => temp_derived2
     )
 
-    return ret_dict
+    return debug_dict
     
 end
 

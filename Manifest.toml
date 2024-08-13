@@ -2,7 +2,7 @@
 
 julia_version = "1.9.4"
 manifest_format = "2.0"
-project_hash = "e7223de387a045cb8c87ad731c0a890407a40473"
+project_hash = "d859e606ebf6a9d14b8f29924437e07bee0ba37a"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -235,6 +235,12 @@ version = "0.8.5"
 deps = ["ConstructionBase", "FieldMetadata"]
 git-tree-sha1 = "d3541c658c7e452fefba6c933c43842282cdfd3e"
 uuid = "4c728ea3-d9ee-5c9a-9642-b6f7d7dc04fa"
+version = "0.4.3"
+
+[[deps.Formatting]]
+deps = ["Logging", "Printf"]
+git-tree-sha1 = "fb409abab2caf118986fc597ba84b50cbaf00b87"
+uuid = "59287772-0a20-5a39-b81b-1366585eb4c0"
 version = "0.4.3"
 
 [[deps.Future]]

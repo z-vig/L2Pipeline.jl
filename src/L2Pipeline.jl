@@ -19,6 +19,7 @@ GOOD_BANDS = 9:255
     wvl :: Vector{<:AbstractFloat}
     rdn :: Array{<:AbstractFloat,3}
     obs :: Array{<:AbstractFloat,3}
+    illum :: Array{<:AbstractFloat,3}
     solspec :: Tuple{Vector{<:AbstractFloat},Vector{<:AbstractFloat},Float64} #(wvl,irr,distance)
     statpol :: Tuple{Vector{<:AbstractFloat},Vector{<:AbstractFloat},Dates.DateTime} 
     falpha :: Matrix{<:AbstractFloat}
@@ -46,7 +47,7 @@ function caldata_from_url(url::String,imageid::String)
     --> Backplanes
         --> LatLongElev
         --> ObsGeometry
-        ...various terrain and phase angle maps
+        --> TerrainGeometry (this should be the resampled geometries obtained from the get_terrain_geometries notebook)
     --> ScalarDatasets
         ...derived scalar datasets
     --> ShadowMaps
@@ -91,6 +92,11 @@ function caldata_from_url(url::String,imageid::String)
     #Getting obs
     obs = h5open(joinpath(url,"$(imageid)_spectral_data.hdf5"), "r") do f
         return read(f["Backplanes/ObsGeometry"])
+    end
+
+    #Getting illum
+    illum = h5open(joinpath(url,"$(imageid)_spectral_data.hdf5"), "r") do f
+        return read(f["Backplanes/TerrainGeometry"])
     end
 
     #Getting solspec
@@ -145,6 +151,7 @@ function caldata_from_url(url::String,imageid::String)
         wvl = wvl[GOOD_BANDS],
         rdn = rdn[:,:,GOOD_BANDS],
         obs = obs[:,:,:],
+        illum = illum[:,:,:],
         solspec = (solwvl[GOOD_BANDS],solirr[GOOD_BANDS],soldist),
         statpol = (sp1[GOOD_BANDS],sp2[GOOD_BANDS],starttime),
         falpha = f_alpha[:,GOOD_BANDS]
@@ -153,22 +160,22 @@ function caldata_from_url(url::String,imageid::String)
 end
 
 include("geometry_objects.jl")
-export M3Geometry,convert_to_rad!,calc_e,calc_i,get_geom_fromfile,get_geom_fromDEM
+export M3Geometry,convert_to_rad!,calc_e,calc_i,calc_g,get_geom_fromfile,get_geom_fromDEM
 
 include("spectral_utilities.jl")
 export movingavg
 
 include("solspec_removal.jl")
-export rem_solspec
+export rem_solspec!
 
 include("statistical_polishing.jl")
-export statistical_polish
+export statistical_polish!
 
 include("photometric_correction.jl")
-export photometric_correction
+export photometric_correction!,photometric_correction
 
 include("thermal_corrections.jl")
-export clark_etal,li_milliken,B
+export clark_etal!,li_milliken,B
 
 export L1CalData,
        caldata_from_url

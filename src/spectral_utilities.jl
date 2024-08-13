@@ -5,7 +5,9 @@ Several utility functions for manipulating spectra
 using Statistics
 
 function movingavg(input_image::Array{<:AbstractFloat,3},input_λvector::Vector{<:AbstractFloat},box_size::Int)
-
+    """
+    Moving average filter that preserves the size of the original data
+    """
     if box_size%2==0
         throw(DomainError(box_size,"Box Size must be odd!"))
     end

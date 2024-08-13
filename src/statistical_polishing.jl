@@ -2,7 +2,7 @@
 Statistical Polishing Step
 """
 
-function statistical_polish(dat::L1CalData)
+function statistical_polish!(dat::L1CalData)
     starttime = dat.statpol[3]
     ax = axes(dat.rdn)
 

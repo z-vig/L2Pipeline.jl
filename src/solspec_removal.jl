@@ -2,7 +2,7 @@
 Solar Spectrum Removal Step
 """
 
-function rem_solspec(dat::L1CalData)
+function rem_solspec!(dat::L1CalData)
     ax = axes(dat.rdn)
     solspec_removed = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)

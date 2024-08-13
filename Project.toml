@@ -6,6 +6,7 @@ version = "1.0.0-DEV"
 [deps]
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Formatting = "59287772-0a20-5a39-b81b-1366585eb4c0"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Rasters = "a3a2b9e3-a471-40c9-b274-f788e487c689"
