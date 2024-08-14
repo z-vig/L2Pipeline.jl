@@ -172,7 +172,7 @@ include("statistical_polishing.jl")
 export statistical_polish!
 
 include("photometric_correction.jl")
-export photometric_correction!,photometric_correction
+export photometric_correction!,photometric_coef
 
 include("thermal_corrections.jl")
 export clark_etal!,li_milliken,B

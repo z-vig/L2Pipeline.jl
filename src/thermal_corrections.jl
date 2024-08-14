@@ -18,13 +18,18 @@ h = 6.626*10^-34 #J*s
 kᵦ = 1.381*10^-23 #J/K
 c = 2.998*10^8 #m/s
 
-function B(λ::Vector{Float64},T::Float64,ϵ::Float64)
+function B(λ::Vector{Float64},T::Float64,ϵ::Union{Float64,Vector{Float64}})
     return ((2*h*c^2) ./ (λ .^ 5)) .* (ϵ ./ (exp.((h*c)./(λ*kᵦ*T)).-1))
 end
 
 function get_temp(B,ϵ,λ,F) :: Float64
     # println("$B, $ϵ, $λ, $F")
-    return (h*c/(λ*kᵦ)) * (log((2*h*c^2*ϵ/(F*B*λ^5))-1))^-1
+    return (h*c/(λ*kᵦ)) * (log((2*h*c^2*ϵ/(F*B*λ^5))+1))^-1
+end
+
+function get_temp_photometric(B,ϵ,λ,F,Φ,x,y) :: Float64
+    # println("$B, $ϵ, $λ, $F, $Φ, $x, $y")
+    return (h*c/(λ*kᵦ)) * (log((2*h*c^2*ϵ*Φ/(F*B*λ^5))+1))^-1
 end
 
 function clark_etal!(dat::L1CalData)
@@ -91,7 +96,7 @@ function clark_etal!(dat::L1CalData)
     planck1 = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
         if isfinite(temp_derived[x,y])
-            return B(dat.wvl .* 10^-9, temp_derived[x,y], ϵ[x,y])./(10^6*dat.solspec[2])
+            return B(dat.wvl .* 10^-9, temp_derived[x,y], ϵ[x,y])./(10^6*dat.solspec[2]) .* dat.solspec[3]^2
         elseif isnan(temp_derived[x,y])
             return NaN .* ones(size(dat.wvl))
         end
@@ -102,65 +107,193 @@ function clark_etal!(dat::L1CalData)
     IOF1 = map(CartesianIndices(ax[1:2])) do i
         x,y = Tuple(i)
         if isfinite(temp_derived[x,y])
-            emiss1 = B(dat.wvl .*10^-9,temp_derived[x,y],ϵ[x,y])
+            emiss1 = B(dat.wvl .*10^-9,temp_derived[x,y],ϵ[x,y]) .* dat.solspec[3]^2
             return step1[x,y,:] .- (emiss1./(10^6*dat.solspec[2]))
         elseif isnan(temp_derived[x,y])
-            return step1
+            return step1[x,y,:]
         end
     end
     println("Step 5: Initial thermal emission removed...")
     
     #Phase Angle Correction (Step6)
-    photo_correction = photometric_correction(
-        IOF1,
-        dat.illum...,
-        dat.falpha,
-        return_corrected_values=true
-    )
+    photo_coef = photometric_coef(dat)
+    photo_corrected = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(photo_coef[x,y][1])
+            corrected = photo_coef[x,y] .* IOF1[x,y]
+            # return corrected
+            if maximum(corrected) > 0.6
+                return 0.6 .* corrected ./ maximum(corrected) #scaling large reflectance values!
+            elseif maximum(corrected) < 0.6
+                return corrected
+            end
+        elseif isnan(photo_coef[x,y][1])
+            return NaN .* ones(size(dat.wvl))
+        end
+    end
+    println("Step 6: Photometric correction applied...")
 
-    # println("Step 6: Photometric correction applied...")
+    #Iterative thermal removal function
 
-    # #Wavelength-dependent emissivity (Step7)
-    # ϵ_λ = map(CartesianIndices(ax[1:2])) do i
-    #     x,y=Tuple(i)
-    #     return 1 .- IOF1c[x,y]
-    # end
-    # println("Step 7: Wavelength-dependent emissivity derived...")
+    #Second projection (Step7)
+    projIF2 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        m = (IOF1[x,y][idxE]-IOF1[x,y][idxD]) / (wvlE-wvlD)
+        projIF2 = m*(wvlC-wvlD)+IOF1[x,y][idxD]
+        return projIF2
+    end
 
-    # #Second projection (Step8)
-    # projIF2 = map(CartesianIndices(ax[1:2])) do i
-    #     x,y = Tuple(i)
-    #     m = (IOF1[x,y][idxE]-IOF1[x,y][idxD]) / (wvlE-wvlD)
-    #     projIF2 = m*(wvlC-wvlD)+IOF1[x,y][idxD]
-    #     return projIF2
-    # end
 
-    # T2 = map(CartesianIndices(ax[1:2])) do i
-    #     x,y = Tuple(i)
-    #     T2 = dat.current_step[x,y,idxC] - projIF2[x,y]
-    #     if T2>0
-    #         return T2
-    #     elseif T2<0
-    #         return -999 #Error value when temperature is undetermined
-    #     end
-    # end
-    # println("Step 8: Projecting to 2.59μm and obtaining residual thermal component...")
+    println("Step 7: Projecting to 2.59μm...")
 
-    # #Second blackbody estimation (step9)
-    # temp_derived2 = map(CartesianIndices(ax[1:2])) do i
-    #     x,y = Tuple(i)
-    #     if T2[x,y] != -999
-    #         Fidx = argmin(abs.(dat.solspec[1].-wvlC))
-    #         F = 10^6 .* dat.solspec[2][Fidx] ./ π
-    #         try
-    #             return get_temp(T2[x,y],ϵ_λ[x,y][idxC],wvlC*10^-9,F)
-    #         catch
-    #             println(ϵ_λ[x,y][idxC])
-    #         end
-    #     else
-    #         return -999.
-    #     end
-    # end
+    #Wavelength-dependent emissivity and second thermal component (Step8)
+    ϵ_λ = map(CartesianIndices(ax[1:2])) do i
+        x,y=Tuple(i)
+        return 1 .- photo_corrected[x,y]
+    end
+
+    T2 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        T2 = step1[x,y] - projIF2[x,y]
+        if T2>0
+            return T2
+        elseif T2<0
+            return NaN #Error value when temperature is undetermined
+        elseif isnan(T2)
+            return NaN
+        end
+    end
+    println("Step 8: Second thermal component obtained...")
+
+    #2nd Derived temperature and thermal emission spectrum (step9)
+    temp_derived2 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(T2[x,y])
+            Fidx = argmin(abs.(dat.solspec[1].-wvlC))
+            F = 10^6 .* dat.solspec[2][Fidx] ./ π
+            return get_temp_photometric(T2[x,y],ϵ_λ[x,y][idxC],wvlC*10^-9,F,photo_coef[x,y][idxC],x,y)
+        elseif isnan(T2[x,y])
+            return NaN
+        end
+    end
+
+    planck2 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(temp_derived2[x,y])
+            therm_spectrum = (dat.solspec[3]^2 .* B(dat.wvl .* 10^-9, temp_derived2[x,y], ϵ_λ[x,y])) ./ (10^6*dat.solspec[2])
+            return photo_coef[x,y] .* therm_spectrum
+        elseif isnan(temp_derived2[x,y])
+            return NaN .* ones(size(dat.wvl))
+        end
+    end
+    println("Step 9: Second temperature estimate obtained...")
+
+    #Removing 2nd thermal spectrum and photometrically correcting (step10)
+    IOF2 = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(temp_derived2[x,y])
+            return step1[x,y,:] .- planck2[x,y]
+        elseif isnan(temp_derived2[x,y])
+            return step1[x,y,:]
+        end
+    end
+
+    #photometrically correcting IOF2 (step10.5)
+    IOF2_photo = map(CartesianIndices(ax[1:2])) do i
+        x,y = Tuple(i)
+        if isfinite(photo_coef[x,y][1])
+            corrected = photo_coef[x,y] .* IOF2[x,y]
+            # return corrected
+            if maximum(corrected) > 0.6
+                return 0.6 .* corrected ./ maximum(corrected) #scaling large reflectance values!
+            elseif maximum(corrected) < 0.6
+                return corrected
+            end
+        elseif isnan(photo_coef[x,y][1])
+            return NaN .* ones(size(dat.wvl))
+        end
+    end
+
+
+    function iter_thermal(IOF::Matrix{Vector{Float64}},photo_coef::Matrix{Vector{Float64}},orig_rfl::Array{Float64,3},bad_temp_mask::Matrix{Bool})
+        projIF = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            m = (IOF[x,y][idxE]-IOF[x,y][idxD]) / (wvlE-wvlD)
+            projIF = m*(wvlC-wvlD)+IOF[x,y][idxD]
+            return projIF
+        end
+
+        #Wavelength-dependent emissivity and second thermal component (Step8)
+        ϵ_λ = map(CartesianIndices(ax[1:2])) do i
+            x,y=Tuple(i)
+            return 1 .- (photo_coef[x,y] .* IOF[x,y]) 
+        end
+
+        T = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            T = step1[x,y] - projIF[x,y]
+            if T>0
+                return T
+            elseif T<0
+                return NaN #Error value when temperature is undetermined
+            elseif isnan(T2)
+                return NaN
+            end
+        end
+
+        #2nd Derived temperature and thermal emission spectrum (step9)
+        temp_derived = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            if isfinite(T[x,y])
+                Fidx = argmin(abs.(dat.solspec[1].-wvlC))
+                F = 10^6 .* dat.solspec[2][Fidx] ./ π
+                return get_temp_photometric(T[x,y],ϵ_λ[x,y][idxC],wvlC*10^-9,F,photo_coef[x,y][idxC],x,y)
+            elseif isnan(T[x,y])
+                return NaN
+            end
+        end
+
+        planck = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            if isfinite(temp_derived[x,y])
+                therm_spectrum = (dat.solspec[3]^2 .* B(dat.wvl .* 10^-9, temp_derived2[x,y], ϵ_λ[x,y])) ./ (10^6*dat.solspec[2])
+                return photo_coef[x,y] .* therm_spectrum
+            elseif isnan(temp_derived[x,y])
+                return NaN .* ones(size(dat.wvl))
+            end
+        end
+
+        #Removing 2nd thermal spectrum and photometrically correcting (step10)
+        IOF2 = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            if isfinite(temp_derived2[x,y])
+                return step1[x,y,:] .- planck[x,y]
+            elseif isnan(temp_derived2[x,y])
+                return step1[x,y,:]
+            end
+        end
+
+        #photometrically correcting IOF2 (step10.5)
+        IOF2_photo = map(CartesianIndices(ax[1:2])) do i
+            x,y = Tuple(i)
+            if isfinite(photo_coef[x,y][1])
+                corrected = photo_coef[x,y] .* IOF2[x,y]
+                # return corrected
+                if maximum(corrected) > 0.6
+                    return 0.6 .* corrected ./ maximum(corrected) #scaling large reflectance values!
+                elseif maximum(corrected) < 0.6
+                    return corrected
+                end
+            elseif isnan(photo_coef[x,y][1])
+                return NaN .* ones(size(dat.wvl))
+            end
+        end
+
+        return projIF2,ϵ_λ,T2,temp_derived2,planck2,IOF2,IOF2_photo
+    end
+
+    projIF2,ϵ_λ,T2,temp_derived2,planck2,IOF2,IOF2_photo = iter_thermal(IOF1)
+
 
     debug_dict = Dict(
         "wvl_used" => (wvlA,wvlB,wvlC,wvlD,wvlE),
@@ -170,17 +303,13 @@ function clark_etal!(dat::L1CalData)
         "step2" => projIF, #scalar array of projected values
         "step3" => (T1,ϵ), #(Thermal component, derived emissivity)
         "step4" => (temp_derived,planck1), #Derived temperature and corresponding planck spectrum
-        "step5" => IOF1, #Thermal spectrum removed
-        # "step6" => photo_correction #Photometrically corrected data
-        # "IOF1" => make3d(IOF1),
-        # "i_topo" => i_topo,
-        # "e_topo" => e_topo,
-        # "photo" => make3d(photo_correction),
-        # "IOF1c" => make3d(IOF1c),
-        # "ep_wvl" => make3d(ϵ_λ),
-        # "p2" => pnts,
-        # "T2" => T2
-        # "temp2" => temp_derived2
+        "step5" => make3d(IOF1), #Thermal spectrum removed
+        "step6" => (make3d(photo_coef),make3d(photo_corrected)), #Photometrically corrected data
+        "step7" => projIF2, #scalar array of projected values
+        "step8" => (T2,make3d(ϵ_λ)), #wavelength dependent emissivity
+        "step9" => (temp_derived2,planck2), #2nd temperature and thermal emission
+        "step10" => make3d(IOF2),
+        # "step10.5" => make3d(IOF2_photo)
     )
 
     return debug_dict
