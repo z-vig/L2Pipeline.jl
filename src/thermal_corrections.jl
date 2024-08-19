@@ -292,7 +292,7 @@ function clark_etal!(dat::L1CalData)
         return projIF2,ϵ_λ,T2,temp_derived2,planck2,IOF2,IOF2_photo
     end
 
-    projIF2,ϵ_λ,T2,temp_derived2,planck2,IOF2,IOF2_photo = iter_thermal(IOF1)
+    # projIF2,ϵ_λ,T2,temp_derived2,planck2,IOF2,IOF2_photo = iter_thermal(IOF1)
 
 
     debug_dict = Dict(

@@ -174,8 +174,11 @@ export statistical_polish!
 include("photometric_correction.jl")
 export photometric_correction!,photometric_coef
 
-include("thermal_corrections.jl")
-export clark_etal!,li_milliken,B
+# include("thermal_corrections.jl")
+# export clark_etal!,li_milliken,B
+
+include("thermal_corrections_better.jl")
+export clark_etal!
 
 export L1CalData,
        caldata_from_url
